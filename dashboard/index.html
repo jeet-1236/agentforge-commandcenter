@@ -11,7 +11,7 @@
     --border:#243040; --border-2:#2f3d52;
     --text:#e6edf3; --text-2:#9aa7b8; --text-3:#6b7889;
     --accent:#3b82f6; --accent-2:#60a5fa; --accent-soft:rgba(59,130,246,.14);
-    --ok:#3fb950; --ok-soft:rgba(63,185,80,.13);
+    --ok:#3fb950; --ok-soft:rgba(63,185,80,.13); --ok-text:#7ee39a;
     --warn:#d29922; --warn-soft:rgba(210,153,34,.14);
     --crit:#f85149; --crit-soft:rgba(248,81,73,.14);
     --info:#58a6ff;
@@ -55,7 +55,7 @@
   .topbar .sub{color:var(--text-3);font-size:12px;margin-left:-8px}
   .spacer{flex:1}
   .statuspill{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-weight:650;font-size:12.5px;border:1px solid}
-  .statuspill.ok{color:#7ee39a;background:var(--ok-soft);border-color:rgba(63,185,80,.35)}
+  .statuspill.ok{color:var(--ok-text);background:var(--ok-soft);border-color:rgba(63,185,80,.35)}
   .statuspill.warn{color:#f0c85f;background:var(--warn-soft);border-color:rgba(210,153,34,.4)}
   .statuspill.crit{color:#ff8983;background:var(--crit-soft);border-color:rgba(248,81,73,.4)}
   .metasm{font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:6px}
@@ -92,7 +92,7 @@
 
   /* status pill */
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;padding:3px 9px;border-radius:999px;white-space:nowrap}
-  .pill.ok{color:#7ee39a;background:var(--ok-soft)}
+  .pill.ok{color:var(--ok-text);background:var(--ok-soft)}
   .pill.warn{color:#f0c85f;background:var(--warn-soft)}
   .pill.crit{color:#ff8983;background:var(--crit-soft)}
   .pill.info{color:#9dc7ff;background:var(--accent-soft)}
@@ -129,7 +129,7 @@
   .row{display:flex;align-items:flex-start;gap:11px;padding:10px 2px;border-bottom:1px solid var(--border)}
   .row:last-child{border-bottom:0}
   .row .ic{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;font-size:12px;flex:none;margin-top:1px}
-  .ic.ok{background:var(--ok-soft);color:#7ee39a}.ic.warn{background:var(--warn-soft);color:#f0c85f}.ic.crit{background:var(--crit-soft);color:#ff8983}.ic.acc{background:var(--accent-soft);color:#9dc7ff}
+  .ic.ok{background:var(--ok-soft);color:var(--ok-text)}.ic.warn{background:var(--warn-soft);color:#f0c85f}.ic.crit{background:var(--crit-soft);color:#ff8983}.ic.acc{background:var(--accent-soft);color:#9dc7ff}
   .row .tx{flex:1;min-width:0}.row .tx b{font-weight:600;font-size:13px}.row .tx p{margin:2px 0 0;color:var(--text-2);font-size:12px}
   .row .tm{color:var(--text-3);font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap;margin-top:2px}
   .feed{max-height:340px;overflow:auto}
@@ -200,12 +200,17 @@ function track(name,init){SERIES[name]=Array.from({length:N},()=>init);CUR[name]
  ['open_tk',12],['sla',2]].forEach(([n,v])=>track(n,v));
 
 let FLAGS={}, everBad={}, feed=[], lastFlags=null, agfState='idle', agfSince=0, connected=true;
-const FAULTS=['crm_sync_stalled','crm_vendor_down','crm_credential_expired','monitor_alert_storm','crm_delivery_stuck','account_mismatch'];
+const FAULTS=['crm_sync_stalled','crm_vendor_down','crm_credential_expired','monitor_alert_storm','crm_delivery_stuck','account_mismatch',
+              'code_pipeline','code_sla','code_finops','code_access','code_accent'];
+const CODE_FAULTS=['code_pipeline','code_sla','code_finops','code_access','code_accent'];   // L3 code defects (fixed via a PR, not an L2 action)
 
 function targets(F){
   const syncFail=F.crm_vendor_down||F.crm_credential_expired;
   const anyRev=F.crm_sync_stalled||syncFail||F.crm_delivery_stuck;
   const anyInc=FAULTS.some(f=>F[f]);
+  // support-affecting incidents only (runtime faults + the SLA code defect) — NOT the other code defects,
+  // which live on Revenue/Cloud/Security. Keeps the Support surface's ticket/SLA load consistent with domHealth.
+  const supInc=FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla;
   return {
     pay_err:  F.monitor_alert_storm?14:.2,
     pay_p95:  F.monitor_alert_storm?2200:190,
@@ -214,14 +219,14 @@ function targets(F){
     sync_lag: F.crm_sync_stalled?2700:45,
     deals_min:F.crm_sync_stalled?0:9,
     sync_err: syncFail?8:0,
-    inflow:   anyInc?18:7,
+    inflow:   supInc?18:7,
     spend_rate:F.monitor_alert_storm?2170:2000,
     auth_fail:F.crm_credential_expired?6:.2,
     alert_ct: F.monitor_alert_storm?18:1,
     dlq:      F.crm_delivery_stuck?1:0,
-    open_tk:  12+(anyInc?1:0)+(F.crm_delivery_stuck?1:0),
-    sla:      2+(anyInc?1:0),
-    _syncFail:syncFail,_anyRev:anyRev,_anyInc:anyInc
+    open_tk:  12+(supInc?1:0)+(F.crm_delivery_stuck?1:0),
+    sla:      2+(supInc?1:0),
+    _syncFail:syncFail,_anyRev:anyRev,_anyInc:anyInc,_supInc:supInc
   };
 }
 function advance(F){
@@ -249,10 +254,10 @@ function domHealth(F){
   return {
     overview:'',
     system:  F.monitor_alert_storm?'crit':F.crm_vendor_down?'warn':'ok',
-    revenue: sf?'crit':(F.crm_sync_stalled||F.crm_delivery_stuck||F.account_mismatch)?'warn':'ok',
-    support: FAULTS.some(f=>F[f])?'warn':'ok',
-    cloud:   'ok',
-    security:F.crm_credential_expired?'crit':'ok'
+    revenue: sf?'crit':(F.crm_sync_stalled||F.crm_delivery_stuck||F.account_mismatch||F.code_pipeline)?'warn':'ok',
+    support: (FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla)?'warn':'ok',
+    cloud:   F.code_finops?'warn':'ok',
+    security:F.crm_credential_expired?'crit':F.code_access?'warn':'ok'
   };
 }
 const worst=h=>['crit','warn','ok'].find(l=>Object.values(h).includes(l))||'ok';
@@ -264,7 +269,13 @@ const INC={
   crm_credential_expired:{dom:'Access & Security',sev:'crit',raise:'Twenty CRM integration credential expired — 401s on every sync',fix:'Rotated the expired credential (previewed + approved); the old key is rejected and sync resumed.'},
   crm_sync_stalled:{dom:'Revenue',sev:'warn',raise:'CRM deals sync stalled — data 45m stale while the status check reads green',fix:'Detected on freshness (not job status); re-ran the idempotent sync and confirmed the data is fresh again.'},
   crm_delivery_stuck:{dom:'Revenue',sev:'warn',raise:'1 outbound delivery dead-lettered — account ACME-4021 stuck while others flow',fix:'Replayed just that one dead-lettered item (not the batch) and confirmed it left the queue.'},
-  account_mismatch:{dom:'Revenue',sev:'warn',raise:'1 account\'s stored balance disagrees with the system of record — ACC-4471 off by 150,000 while the portfolio total reads normal',fix:'Pulled the account ID from the ticket, diffed stored vs authoritative, and corrected just that one record — no other accounts touched.'}
+  account_mismatch:{dom:'Revenue',sev:'warn',raise:'1 account\'s stored balance disagrees with the system of record — ACC-4471 off by 150,000 while the portfolio total reads normal',fix:'Pulled the account ID from the ticket, diffed stored vs authoritative, and corrected just that one record — no other accounts touched.'},
+  // L3 CODE DEFECTS — real bugs in the commandcenter/*.py backend, fixed by the L3 lane (reproduce → fix → PR → deploy), not an L2 action.
+  code_pipeline:{dom:'Revenue',sev:'warn',kind:'code',raise:'Code defect · pipeline.py — pipeline value overstated: multi-currency deals counted once per currency ($2.04M shown vs $1.84M actual)',fix:'AgentForge reproduced it, fixed the rollup to count each deal once, ran the tests, and opened a PR — the value corrects on deploy.'},
+  code_sla:{dom:'Support',sev:'warn',kind:'code',raise:'Code defect · sla.py — a ticket exactly at the SLA warning threshold isn\'t flagged at-risk, so a breach slipped the early warning',fix:'AgentForge reproduced it, fixed the boundary check (< → <=), ran the tests, and opened a PR.'},
+  code_finops:{dom:'Cloud Spend',sev:'warn',kind:'code',raise:'Code defect · finops.py — the month-end projection over-shoots early in the month, firing a false "over budget" alert',fix:'AgentForge reproduced it, fixed the elapsed-days divisor, ran the tests, and opened a PR.'},
+  code_access:{dom:'Access & Security',sev:'warn',kind:'code',raise:'Code defect · access.py — a departed employee who was recently active isn\'t flagged in the access review',fix:'AgentForge reproduced it, fixed the and→or condition, ran the tests, and opened a PR.'},
+  code_accent:{dom:'System health',sev:'warn',kind:'code',raise:'Code defect · theme.py — every HEALTHY status signal (the Operational pill, the green service-health dots, the ok KPI stripes) renders the danger red (#f85149) instead of the brand green, so a fully healthy system reads as critical',fix:'AgentForge reproduced it (test_theme.py), restored the healthy green, ran the tests, and opened a PR — the health indicators repaint green on deploy.'}
 };
 function pushFeed(kind,dom,text){
   feed.unshift({kind,dom,text,t:new Date()}); if(feed.length>40)feed.pop();
@@ -377,8 +388,8 @@ function ov_up(){
   const upPct=(100-(F.monitor_alert_storm?0.4:0)-(F.crm_vendor_down?0.15:0)).toFixed(2);
   $('ov-kpis').innerHTML=[
     kpi('Global uptime',upPct,'%',{state:gs,stripe:gs==='ok'?'acc':gs,spark:SERIES.req_rate,sparkCol:'var(--accent)'}),
-    kpi('Pipeline value',money(1840000),'',{stripe:'acc'}),
-    kpi('Open tickets',fmt(CUR.open_tk),'',{state:t.sla>2?'warn':'ok',stripe:any?'warn':'acc'}),
+    kpi('Pipeline value',money(FLAGS.code_pipeline?2040000:1840000),'',{state:FLAGS.code_pipeline?'warn':undefined,stripe:FLAGS.code_pipeline?'warn':'acc'}),
+    kpi('Open tickets',fmt(CUR.open_tk),'',{state:t.sla>2?'warn':'ok',stripe:t._supInc?'warn':'acc'}),
     kpi('Cloud spend',(CUR.spend_rate*24/1000).toFixed(1)+'k','/day',{stripe:'acc'}),
     kpi('Expired creds',fmt(F.crm_credential_expired?1:0),'',{state:F.crm_credential_expired?'crit':'ok',stripe:F.crm_credential_expired?'crit':'acc'}),
     kpi('Dead-letter Q',fmt(CUR.dlq),'',{state:CUR.dlq>0?'warn':'ok',stripe:CUR.dlq>0?'warn':'acc'})
@@ -437,22 +448,37 @@ function sys_up(){
 }
 
 /* Revenue */
+// The open deals BEHIND the Pipeline value — the visible PROOF the number is right/wrong. A multi-currency deal
+// (ccy.length>1) is summed once PER CURRENCY by the buggy pipeline.py rollup, so it appears twice while the
+// code_pipeline defect is armed and collapses to one row once the fix deploys. Unique total = $1.84M; the three
+// double-counted deals add $200k → $2.04M (matches the KPI exactly, so the audience can add it up themselves).
+const PIPE_DEALS=[
+  {id:'ACME-1001',  name:'Acme Corp · Q3 expansion',  usd:100000, ccy:['USD','EUR']},
+  {id:'GLOBEX-2044',name:'Globex · annual renewal',   usd:60000,  ccy:['USD','GBP']},
+  {id:'INITECH-330',name:'Initech · new logo',        usd:40000,  ccy:['USD','JPY']},
+  {id:'HOOLI-4110', name:'Hooli · platform upsell',   usd:820000, ccy:['USD']},
+  {id:'STARK-5001', name:'Stark Industries · 3-yr',   usd:520000, ccy:['USD']},
+  {id:'WAYNE-6200', name:'Wayne Enterprises · pilot', usd:300000, ccy:['USD']},
+];
 function rev_sk(){
   return `<div class="grid g4" style="margin-bottom:14px" id="rev-kpis"></div>
   <div class="grid g2" style="margin-bottom:14px">
     <div class="card"><div class="hd"><h3>Deals synced / min</h3><span id="rev-ds-cur" class="mono muted"></span></div>${areaSVG('rev-ds',150)}</div>
     <div class="card"><div class="hd"><h3>Sync error rate</h3><span id="rev-se-cur" class="mono muted"></span></div>${areaSVG('rev-se',150)}</div>
   </div>
-  <div class="grid g3">
+  <div class="grid g3" style="margin-bottom:14px">
     <div class="card"><div class="hd"><h3>Data freshness</h3><span class="muted">CRM sync</span></div><div id="rev-fresh"></div></div>
     <div class="card"><div class="hd"><h3>Pipeline by stage</h3><span class="muted">open deals</span></div><div id="rev-stages"></div></div>
     <div class="card"><div class="hd"><h3>Outbound delivery queue</h3><span id="rev-dlq-sum" class="muted"></span></div><div id="rev-dlq"></div></div>
-  </div>`;
+  </div>
+  <div class="card"><div class="hd"><h3>Pipeline breakdown — open deals</h3><span class="muted">what the Pipeline value is computed from</span></div>
+    <div id="rev-deals" style="margin-top:6px"></div>
+    <div id="rev-deals-sum" class="mono" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12.5px"></div></div>`;
 }
 function rev_up(){
   const F=FLAGS,sf=F.crm_vendor_down||F.crm_credential_expired;
   $('rev-kpis').innerHTML=[
-    kpi('Pipeline value',money(1840000),'',{stripe:'acc'}),
+    kpi('Pipeline value',money(FLAGS.code_pipeline?2040000:1840000),'',{state:FLAGS.code_pipeline?'warn':undefined,stripe:FLAGS.code_pipeline?'warn':'acc'}),
     kpi('Open deals','37','',{stripe:'acc'}),
     kpi('Data freshness',dur(CUR.sync_lag),'',{state:CUR.sync_lag>300?'warn':'ok',spark:SERIES.sync_lag,sparkCol:'var(--warn)',stripe:CUR.sync_lag>300?'warn':'acc'}),
     kpi('Sync errors',CUR.sync_err.toFixed(1),'%',{state:CUR.sync_err>1?'crit':'ok',spark:SERIES.sync_err,sparkCol:'var(--crit)',stripe:CUR.sync_err>1?'crit':'acc'})
@@ -471,6 +497,24 @@ function rev_up(){
     ?`<div class="row"><div class="ic warn">!</div><div class="tx"><b class="mono">ACME-4021</b><p>outbound sync dead-lettered (downstream 409) — 1 item stuck, every other account delivering</p></div></div>
       <div style="margin-top:8px" class="muted">4,812 delivered today · <span style="color:var(--warn)">1 dead-lettered</span></div>`
     :`<div class="empty">✓ Queue clear — 4,813 delivered today, 0 dead-lettered</div>`;
+  // Pipeline breakdown — the visible PROOF the value is wrong: a multi-currency deal is counted once PER currency
+  // (a duplicate row, flagged) while the bug is armed, and dedups when the fix deploys. The running Σ === the KPI.
+  {
+    const bug=!!F.code_pipeline, rows=[]; let total=0;
+    for(const d of PIPE_DEALS){
+      if(bug && d.ccy.length>1){ d.ccy.forEach((c,i)=>{ total+=d.usd; rows.push(Object.assign({},d,{ccy:c,dupe:i>0})); }); }
+      else { total+=d.usd; rows.push(Object.assign({},d,{ccy:d.ccy.join('+'),dupe:false})); }
+    }
+    const dups=rows.filter(r=>r.dupe).length;
+    $('rev-deals').innerHTML=rows.map(r=>`<div class="bar" style="grid-template-columns:118px 1fr 74px 76px">
+      <span class="mono" style="${r.dupe?'color:var(--crit)':''}">${r.id}</span>
+      <span class="muted" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.name}${r.dupe?' <b style="color:var(--crit)">· ⚠ same deal, counted again</b>':''}</span>
+      <span class="mono muted" style="font-size:11px">${r.ccy}</span>
+      <span class="num" style="${r.dupe?'color:var(--crit)':''}">${money(r.usd)}</span></div>`).join('');
+    $('rev-deals-sum').innerHTML = bug
+      ? `<span style="color:var(--crit)">Σ ${money(total)} · overstated by ${money(200000)} — ${dups} currency rows double-counted (same deal id summed per currency)</span>`
+      : `<span style="color:var(--ok)">Σ ${money(total)} · each deal counted once ✓</span>`;
+  }
 }
 
 /* Support */
@@ -483,10 +527,10 @@ function sup_sk(){
   </div>`;
 }
 function sup_up(){
-  const F=FLAGS,any=FAULTS.some(f=>F[f]);
+  const F=FLAGS,any=FAULTS.some(f=>F[f]&&!f.startsWith('code_'))||F.code_sla;   // support-affecting only
   $('sup-kpis').innerHTML=[
     kpi('Open tickets',fmt(CUR.open_tk),'',{state:CUR.open_tk>13?'warn':'ok',spark:SERIES.open_tk,stripe:CUR.open_tk>13?'warn':'acc'}),
-    kpi('SLA at risk',fmt(CUR.sla),'',{state:CUR.sla>2?'warn':'ok',stripe:CUR.sla>2?'warn':'acc'}),
+    kpi('SLA at risk',fmt(F.code_sla?1:CUR.sla),'',{state:(F.code_sla||CUR.sla>2)?'warn':'ok',stripe:(F.code_sla||CUR.sla>2)?'warn':'acc'}),
     kpi('CSAT','4.6','/5',{state:'ok',stripe:'acc'}),
     kpi('First response','12','min',{state:'ok',stripe:'acc'})
   ].join('');
@@ -511,7 +555,7 @@ function cloud_up(){
   $('cl-kpis').innerHTML=[
     kpi('MTD spend',money(spend),'',{state:spend/budget>.85?'warn':'ok',stripe:'acc'}),
     kpi('Budget used',(spend/budget*100).toFixed(0),'%',{state:spend/budget>.85?'warn':'ok',stripe:spend/budget>.85?'warn':'acc'}),
-    kpi('Forecast',money(spend*1.24),'',{state:'ok',stripe:'acc'}),
+    kpi('Forecast',money(F.code_finops?78000:Math.round(spend*1.24)),'',{state:F.code_finops?'warn':'ok',stripe:F.code_finops?'warn':'acc'}),
     kpi('Spend rate',money(CUR.spend_rate),'/hr',{state:F.monitor_alert_storm?'warn':'ok',spark:SERIES.spend_rate,stripe:F.monitor_alert_storm?'warn':'acc'})
   ].join('');
   drawArea($('cl-sp'),SERIES.spend_rate,{color:'var(--s1)',fill:fillFor('cl-sp'),fmt:v=>money(v)+'/hr'});$('cl-sp').style.color='var(--s1)';
@@ -536,7 +580,7 @@ function sec_up(){
     kpi('Expired creds',F.crm_credential_expired?'1':'0','',{state:F.crm_credential_expired?'crit':'ok',stripe:F.crm_credential_expired?'crit':'acc'}),
     kpi('Failed auth',CUR.auth_fail.toFixed(1),'%',{state:CUR.auth_fail>2?'crit':'ok',spark:SERIES.auth_fail,sparkCol:'var(--crit)',stripe:CUR.auth_fail>2?'crit':'acc'}),
     kpi('MFA coverage','98','%',{state:'ok',stripe:'acc'}),
-    kpi('Active sessions','1,284','',{state:'ok',stripe:'acc'})
+    kpi('Access review',F.code_access?'1':'0',F.code_access?'miss':'clean',{state:F.code_access?'warn':'ok',stripe:F.code_access?'warn':'acc'})
   ].join('');
   drawArea($('sec-af'),SERIES.auth_fail,{color:'var(--crit)',fill:fillFor('sec-af'),zero:true,fmt:v=>v.toFixed(2)+'%'});$('sec-af').style.color='var(--crit)';
   $('sec-af-cur').textContent=CUR.auth_fail.toFixed(2)+'%';
@@ -601,6 +645,13 @@ function diffFlags(F){
 async function tick(){
   try{const r=await fetch('/state',{cache:'no-store'});FLAGS=await r.json();connected=true;}
   catch(e){connected=false;/* keep last flags */}
+  // cc-code-5 (theme.py): the HEALTHY status colour IS the visible symptom. When code_accent is armed every
+  // "healthy" signal (the Operational pill, the green service dots, the ok KPI stripes) renders the danger RED —
+  // the dashboard looks like it is on fire even though every status is OK. It repaints to green the moment the fix
+  // deploys (flag cleared on approval). Mirrors theme.status_ok_color(): red #f85149 (bug) vs green #3fb950 (fixed).
+  const _rs=document.documentElement.style;
+  if(FLAGS.code_accent){_rs.setProperty('--ok','#f85149');_rs.setProperty('--ok-soft','rgba(248,81,73,.13)');_rs.setProperty('--ok-text','#ff8983');}
+  else{_rs.setProperty('--ok','#3fb950');_rs.setProperty('--ok-soft','rgba(63,185,80,.13)');_rs.setProperty('--ok-text','#7ee39a');}
   FAULTS.forEach(f=>{if(FLAGS[f]!==undefined&&FLAGS[f])everBad[f]=true;});
   diffFlags(FLAGS);
   advance(FLAGS);

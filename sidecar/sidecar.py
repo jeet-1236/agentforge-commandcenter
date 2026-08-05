@@ -36,6 +36,14 @@ _DEFAULT_STATE = {
     "monitor_alert_storm":    False,   # UC2 · many synthetic monitor alerts + ONE real outage
     "crm_delivery_stuck":     False,   # UC6 · ONE account's outbound delivery dead-lettered (others fine)
     "account_mismatch":       False,   # UC1 · ONE account's stored balance is wrong while the aggregate is fine
+    # ── L3 CODE DEFECTS — real bugs in the commandcenter/*.py backend (not an armed runtime fault; the defect
+    #    lives in the repo). Armed here so the dashboard SHOWS the wrong number the bug produces + an engineering
+    #    incident; AgentForge's L3 lane reproduces → fixes → PR → (deploy) heals it. Toggle for the demo. ──
+    "code_pipeline":          False,   # cc-code-1 · pipeline.py: multi-currency deals double-counted → pipeline value overstated
+    "code_sla":               False,   # cc-code-2 · sla.py: at-risk misses the boundary ticket → a breach slips
+    "code_finops":            False,   # cc-code-3 · finops.py: projection off-by-one → false 'over budget' alert
+    "code_access":            False,   # cc-code-4 · access.py: leaver not flagged → an access-review miss
+    "code_accent":            False,   # cc-code-5 · theme.py: healthy status colour returns the danger red, not the brand green → a healthy system reads as critical
 }
 
 # UC6 · the one account whose outbound sync delivery is dead-lettered while everyone else's flows. Naming the
@@ -113,6 +121,11 @@ def build_snapshot(s: dict) -> dict:
     cred_exp = bool(s.get("crm_credential_expired"))
     storm = bool(s.get("monitor_alert_storm"))
     sync_failing = vendor_down or cred_exp     # the CRM sync connector is erroring (either owner)
+    # L3 code defects — the wrong number each planted bug produces on the dashboard when armed.
+    code_pipeline = bool(s.get("code_pipeline"))
+    code_sla = bool(s.get("code_sla"))
+    code_finops = bool(s.get("code_finops"))
+    code_access = bool(s.get("code_access"))
     return {
         "_comment": "Live Company Command Center telemetry — written by the sidecar from the armed fault flags.",
         "services": {
@@ -147,40 +160,72 @@ def build_snapshot(s: dict) -> dict:
             # record. ONE off account reads 1 here while every service is green and the portfolio aggregate
             # (cc_pipeline_usd) is unchanged — the record-level healthy-status trap.
             "cc_account_mismatch_count":      account_mismatch_count(s),
-            # panel summaries (mocked business surfaces).
+            # panel summaries (mocked business surfaces). Some carry an L3 CODE-DEFECT skew when armed: the wrong
+            # value the planted bug produces, which AgentForge's L3 fix corrects.
             "cc_deals_open":                  37,
-            "cc_pipeline_usd":                1840000,
+            # cc-code-1 (pipeline.py double-count): a $200k multi-currency deal is counted twice → overstated.
+            "cc_pipeline_usd":                2040000 if code_pipeline else 1840000,
+            "cc_pipeline_usd_correct":        1840000,
             "cc_open_tickets":                12,
-            "cc_sla_at_risk_count":           2,
+            # cc-code-2 (sla.py boundary): a ticket exactly at the warning threshold is missed → under-counted,
+            # and one real breach slips the early-warning.
+            "cc_sla_at_risk_count":           1 if code_sla else 2,
+            "cc_sla_breach_missed":           1 if code_sla else 0,
             "cc_cloud_spend_usd":             48200,
             "cc_cloud_budget_usd":            60000,
+            # cc-code-3 (finops.py projection off-by-one): early-month projection over-shoots the budget → false alert.
+            "cc_cloud_projection_usd":        78000 if code_finops else 54000,
             "cc_access_creds_expired":        1 if cred_exp else 0,
+            # cc-code-4 (access.py and/or): a departed employee who was recently active isn't flagged.
+            "cc_access_review_missed":        1 if code_access else 0,
         },
         "errors": _errors(s),
     }
 
 
+import datetime as _dt
+
+
+def _err(service: str, message: str, count: int, entity: str = "") -> dict:
+    """One error record with a real TIMESTAMP and a trace-to-SOURCE deep-link, so an agent that cites this log
+    can show WHEN it happened and click through to WHERE it came from (the observability backend). `entity`
+    (an account/order id) powers the 'reporter's own log line' correlation boost when present."""
+    now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rec = {"service": service, "message": message, "count": count, "ts": now,
+           "source_url": f"https://grafana.internal/explore?service={service}&from=now-1h"}
+    if entity:
+        rec["entity"] = entity
+    return rec
+
+
 def _errors(s: dict) -> list:
     out = []
     if s.get("crm_sync_stalled"):
-        out.append({"service": "crm-sync-connector", "message": "sync worker heartbeat stale — last commit 45m ago", "count": 1, "ts": ""})
+        out.append(_err("crm-sync-connector", "sync worker heartbeat stale — last commit 45m ago", 1))
     if s.get("crm_vendor_down"):
-        out.append({"service": "twenty-crm-vendor", "message": "GET /rest/opportunities -> 503 Service Unavailable (vendor)", "count": 9, "ts": ""})
+        out.append(_err("twenty-crm-vendor", "GET /rest/opportunities -> 503 Service Unavailable (vendor)", 9))
     if s.get("crm_credential_expired"):
-        out.append({"service": "crm-sync-connector", "message": "POST /rest/sync -> 401 Unauthorized: api key expired", "count": 6, "ts": ""})
+        out.append(_err("crm-sync-connector", "POST /rest/sync -> 401 Unauthorized: api key expired", 6))
     if s.get("monitor_alert_storm"):
-        out.append({"service": "payments-api", "message": "monitor 'payments-api' DOWN (real) amid 17 synthetic check alerts", "count": 18, "ts": ""})
+        out.append(_err("payments-api", "monitor 'payments-api' DOWN (real) amid 17 synthetic check alerts", 18))
     if s.get("crm_delivery_stuck"):
-        out.append({"service": "crm-sync-connector",
-                    "message": f"outbound sync delivery for account {STUCK_DELIVERY_ITEM} dead-lettered "
-                               f"(downstream 409) — 1 item stuck; all other accounts delivering normally",
-                    "count": 1, "ts": ""})
+        out.append(_err("crm-sync-connector",
+                        f"outbound sync delivery for account {STUCK_DELIVERY_ITEM} dead-lettered (downstream 409) "
+                        f"— 1 item stuck; all other accounts delivering normally", 1, entity=STUCK_DELIVERY_ITEM))
     if s.get("account_mismatch"):
-        out.append({"service": "crm-sync-connector",
-                    "message": f"data integrity: account {MISMATCH_ACCOUNT} stored balance disagrees with the "
-                               f"system of record (off by {MISMATCH_DELTA:,}) — portfolio aggregate within "
-                               f"tolerance, all other accounts reconcile",
-                    "count": 1, "ts": ""})
+        out.append(_err("crm-sync-connector",
+                        f"data integrity: account {MISMATCH_ACCOUNT} stored balance disagrees with the system of "
+                        f"record (off by {MISMATCH_DELTA:,}) — portfolio aggregate within tolerance, all other "
+                        f"accounts reconcile", 1, entity=MISMATCH_ACCOUNT))
+    # L3 code-defect symptoms — named to the source file so the investigation points at the module to fix.
+    if s.get("code_pipeline"):
+        out.append(_err("commandcenter/pipeline.py", "Revenue rollup overstates pipeline value — multi-currency deals counted once per currency (code defect cc-code-1)", 1))
+    if s.get("code_sla"):
+        out.append(_err("commandcenter/sla.py", "SLA 'at risk' missed a ticket exactly at the warning threshold — a breach slipped the early warning (code defect cc-code-2)", 1))
+    if s.get("code_finops"):
+        out.append(_err("commandcenter/finops.py", "Cloud-spend month-end projection over-shoots early in the month — false 'over budget' alert (code defect cc-code-3)", 1))
+    if s.get("code_access"):
+        out.append(_err("commandcenter/access.py", "Access review missed a departed employee who was recently active (code defect cc-code-4)", 1))
     return out
 
 
