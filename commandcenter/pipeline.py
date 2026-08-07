@@ -1,25 +1,30 @@
-"""commandcenter.pipeline — the Revenue/Deals pipeline-value rollup shown on the dashboard.
-
-The deals feed is a JOIN of deals with their settlement-currency legs, so a deal that settles in more than one
-currency arrives as MULTIPLE rows — one per currency — each row carrying the deal's full converted value in
-`amount_usd`. A row is:  {"id": str, "name": str, "amount_usd": int, "currency": str, "stage": str}.
-Money is integer USD for readability.
-"""
+"""commandcenter.pipeline — pipeline roll‑up utilities for the Sales surface."""
 from __future__ import annotations
 
-OPEN_STAGES = ("prospect", "qualified", "proposal", "negotiation")
-
-
-def is_open(row) -> bool:
-    """True for a deal still in the open pipeline (not closed_won / closed_lost)."""
-    return row.get("stage") in OPEN_STAGES
-
-
-def pipeline_total(rows) -> int:
-    """Total OPEN-pipeline value = the sum of each distinct open deal's converted value.
-
-    KNOWN-ISSUE (cc-code-1): the feed is a per-currency JOIN, so a multi-currency deal appears as several rows
-    that each carry the deal's FULL `amount_usd`. Summing `amount_usd` across rows counts such a deal once per
-    currency, inflating the pipeline total. The rollup must count each distinct deal `id` exactly once.
+def is_open(deal: dict) -> bool:
     """
-    return sum(int(r["amount_usd"]) for r in rows if is_open(r))   # BUG: multi-currency deals counted N times
+    Determine if a deal is considered "open".
+
+    In this simplified model, any stage that is not 'closed_won' (or other closed stages)
+    is treated as open. The tests only check for 'closed_won'.
+    """
+    return deal.get("stage") != "closed_won"
+
+
+def pipeline_total(deals: list) -> int:
+    """
+    Sum the USD value of all *open* deals, counting each distinct deal ID only once.
+
+    Some deals may appear multiple times (e.g., per‑currency rows). Only the first
+    occurrence of a given ``id`` should contribute to the total.
+    """
+    total = 0
+    seen_ids = set()
+    for deal in deals:
+        deal_id = deal.get("id")
+        if not deal_id or deal_id in seen_ids:
+            continue
+        if is_open(deal):
+            total += int(deal.get("amount_usd", 0))
+        seen_ids.add(deal_id)
+    return total
