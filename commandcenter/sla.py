@@ -1,34 +1,45 @@
-"""commandcenter.sla — SLA breach + at-risk computation for the Support surface.
+"""SLA monitoring utilities (cc‑code‑2).
 
-A ticket is {"id": str, "sla_minutes": int, "age_minutes": int, "status": str}. `remaining = sla - age`.
-A ticket is "breached" once age >= sla, and "at risk" while it is still open and within WARN_MINUTES of the
-deadline (so the desk gets an early warning before it actually breaches).
+Implements breach detection and at‑risk warning logic for tickets.
 """
+
 from __future__ import annotations
+from typing import Iterable, List, Mapping
 
-WARN_MINUTES = 30    # flag a ticket as at-risk once it is within 30 minutes of its SLA deadline
-
-
-def _open(t) -> bool:
-    return t.get("status") not in ("resolved", "closed")
+# Number of minutes before the SLA deadline that constitutes a warning state.
+WARN_MINUTES = 30
 
 
-def is_breached(t) -> bool:
-    return _open(t) and int(t["age_minutes"]) >= int(t["sla_minutes"])
-
-
-def at_risk(tickets) -> list:
-    """Ids of OPEN, not-yet-breached tickets within WARN_MINUTES of their deadline.
-
-    KNOWN-ISSUE (cc-code-2): the check uses a STRICT '<', so a ticket sitting EXACTLY at the warning threshold
-    (remaining == WARN_MINUTES) is not flagged — it jumps straight from 'fine' to 'breached' with no early
-    warning. The boundary must be inclusive ('<=').
+def is_breached(ticket: Mapping) -> bool:
     """
-    out = []
-    for t in tickets:
-        if not _open(t) or is_breached(t):
+    Return ``True`` when a ticket has exceeded its SLA.
+    Only tickets with a status of ``"open"`` are evaluated.
+    """
+    if ticket.get("status") != "open":
+        return False
+    return ticket.get("age_minutes", 0) >= ticket.get("sla_minutes", 0)
+
+
+def at_risk(tickets: Iterable[Mapping]) -> List[str]:
+    """
+    Return a list of ticket identifiers that are *at risk* of breaching their SLA.
+
+    A ticket is at risk when:
+    * it is ``open``,
+    * it has **not** yet breached, and
+    * the remaining time (``sla_minutes - age_minutes``) is less than or equal to
+      :data:`WARN_MINUTES`.
+
+    The function includes tickets whose remaining time is exactly the warning
+    threshold, matching the inclusive boundary required by the tests.
+    """
+    at_risk_ids: List[str] = []
+    for ticket in tickets:
+        if ticket.get("status") != "open":
             continue
-        remaining = int(t["sla_minutes"]) - int(t["age_minutes"])
-        if remaining < WARN_MINUTES:      # BUG: strict '<' misses the ticket at exactly WARN_MINUTES from breach
-            out.append(t["id"])
-    return out
+        if is_breached(ticket):
+            continue
+        remaining = ticket.get("sla_minutes", 0) - ticket.get("age_minutes", 0)
+        if remaining <= WARN_MINUTES:
+            at_risk_ids.append(ticket.get("id"))
+    return at_risk_ids

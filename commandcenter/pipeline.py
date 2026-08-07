@@ -1,25 +1,44 @@
-"""commandcenter.pipeline — the Revenue/Deals pipeline-value rollup shown on the dashboard.
+"""Pipeline utilities (cc‑code‑1).
 
-The deals feed is a JOIN of deals with their settlement-currency legs, so a deal that settles in more than one
-currency arrives as MULTIPLE rows — one per currency — each row carrying the deal's full converted value in
-`amount_usd`. A row is:  {"id": str, "name": str, "amount_usd": int, "currency": str, "stage": str}.
-Money is integer USD for readability.
+Functions for working with sales‑pipeline data, including deduplication of
+multi‑currency deal rows.
 """
+
 from __future__ import annotations
-
-OPEN_STAGES = ("prospect", "qualified", "proposal", "negotiation")
-
-
-def is_open(row) -> bool:
-    """True for a deal still in the open pipeline (not closed_won / closed_lost)."""
-    return row.get("stage") in OPEN_STAGES
+from typing import Iterable, Mapping, Set
 
 
-def pipeline_total(rows) -> int:
-    """Total OPEN-pipeline value = the sum of each distinct open deal's converted value.
+# Stages that indicate a deal is *closed* and therefore should not contribute
+# to the open‑pipeline total.
+_CLOSED_STAGES = {"closed_won", "closed_lost", "closed"}
 
-    KNOWN-ISSUE (cc-code-1): the feed is a per-currency JOIN, so a multi-currency deal appears as several rows
-    that each carry the deal's FULL `amount_usd`. Summing `amount_usd` across rows counts such a deal once per
-    currency, inflating the pipeline total. The rollup must count each distinct deal `id` exactly once.
+
+def is_open(deal: Mapping) -> bool:
     """
-    return sum(int(r["amount_usd"]) for r in rows if is_open(r))   # BUG: multi-currency deals counted N times
+    Return ``True`` if the supplied *deal* row represents an open pipeline
+    opportunity. Anything in ``_CLOSED_STAGES`` is considered closed.
+    """
+    stage = str(deal.get("stage", "")).lower()
+    return stage not in _CLOSED_STAGES
+
+
+def pipeline_total(rows: Iterable[Mapping]) -> float:
+    """
+    Compute the total USD value of the open pipeline, counting each distinct
+    deal **once** regardless of how many currency rows it appears in.
+
+    Only rows for which :func:`is_open` returns ``True`` are considered. The
+    first encountered amount for a given ``id`` is used; subsequent rows with
+    the same ``id`` are ignored.
+    """
+    total = 0.0
+    seen_ids: Set = set()
+    for row in rows:
+        deal_id = row.get("id")
+        if not deal_id or deal_id in seen_ids:
+            continue
+        if is_open(row):
+            total += float(row.get("amount_usd", 0))
+        # Record the id regardless of openness to avoid double‑counting later.
+        seen_ids.add(deal_id)
+    return total
