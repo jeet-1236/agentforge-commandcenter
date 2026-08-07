@@ -22,4 +22,14 @@ def pipeline_total(rows) -> int:
     that each carry the deal's FULL `amount_usd`. Summing `amount_usd` across rows counts such a deal once per
     currency, inflating the pipeline total. The rollup must count each distinct deal `id` exactly once.
     """
-    return sum(int(r["amount_usd"]) for r in rows if is_open(r))   # BUG: multi-currency deals counted N times
+    total = 0
+    seen_ids = set()
+    for row in rows:
+        if not is_open(row):
+            continue
+        deal_id = row.get("id")
+        if deal_id in seen_ids:
+            continue
+        total += int(row["amount_usd"])
+        seen_ids.add(deal_id)
+    return total
