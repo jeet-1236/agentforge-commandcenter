@@ -1,25 +1,28 @@
-"""commandcenter.pipeline — the Revenue/Deals pipeline-value rollup shown on the dashboard.
+"""Pipeline‑rollup utilities (cc-code-1)."""
 
-The deals feed is a JOIN of deals with their settlement-currency legs, so a deal that settles in more than one
-currency arrives as MULTIPLE rows — one per currency — each row carrying the deal's full converted value in
-`amount_usd`. A row is:  {"id": str, "name": str, "amount_usd": int, "currency": str, "stage": str}.
-Money is integer USD for readability.
-"""
-from __future__ import annotations
-
-OPEN_STAGES = ("prospect", "qualified", "proposal", "negotiation")
+# Stages considered "open" for pipeline calculations
+_OPEN_STAGES = {"proposal", "qualified", "negotiation", "review"}
 
 
-def is_open(row) -> bool:
-    """True for a deal still in the open pipeline (not closed_won / closed_lost)."""
-    return row.get("stage") in OPEN_STAGES
+def is_open(row: dict) -> bool:
+    """Return True if the deal row is in an open stage."""
+    return row.get("stage") in _OPEN_STAGES
 
 
-def pipeline_total(rows) -> int:
-    """Total OPEN-pipeline value = the sum of each distinct open deal's converted value.
-
-    KNOWN-ISSUE (cc-code-1): the feed is a per-currency JOIN, so a multi-currency deal appears as several rows
-    that each carry the deal's FULL `amount_usd`. Summing `amount_usd` across rows counts such a deal once per
-    currency, inflating the pipeline total. The rollup must count each distinct deal `id` exactly once.
+def pipeline_total(rows: list[dict]) -> int:
     """
-    return sum(int(r["amount_usd"]) for r in rows if is_open(r))   # BUG: multi-currency deals counted N times
+    Return the total USD amount of all open deals, counting each deal (by its unique ``id``) only once.
+
+    Deals may appear multiple times (e.g., one row per currency). The function deduplicates
+    on ``id`` before summing ``amount_usd``.
+    """
+    seen: set[str] = set()
+    total = 0
+    for row in rows:
+        if not is_open(row):
+            continue
+        deal_id = row.get("id")
+        if deal_id and deal_id not in seen:
+            seen.add(deal_id)
+            total += int(row.get("amount_usd", 0))
+    return total

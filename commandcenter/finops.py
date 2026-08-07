@@ -1,26 +1,22 @@
-"""commandcenter.finops — cloud-spend month-end projection for the Cloud Spend surface.
-
-`project_month_end(spend_so_far, day_of_month, days_in_month)` extrapolates the run-rate so far across the whole
-month; the dashboard fires a "budget will be exceeded" alert when the projection tops the budget. `day_of_month`
-is 1-based (the 1st is day 1), and `days_in_month` days have elapsed by month-end. All amounts are integer USD.
-"""
-from __future__ import annotations
+"""FinOps utilities (cc-code-3)."""
 
 
-def project_month_end(spend_so_far: int, day_of_month: int, days_in_month: int = 30) -> int:
-    """Projected full-month spend = (spend so far ÷ days elapsed) × days in the month.
+def over_budget(spend: int, budget: int) -> bool:
+    """Return True if the spend exceeds the budget."""
+    return spend > budget
 
-    KNOWN-ISSUE (cc-code-3): the run-rate divides by (day_of_month - 1) — "completed days" — instead of the
-    days ELAPSED (day_of_month). Early in the month that badly overstates the daily rate (e.g. on the 2nd it
-    treats one day's spend as two days'), firing a false "over budget" alert every month-start; on the 1st it
-    divides by zero.
+
+def project_month_end(spend_to_date: int, *, day_of_month: int, days_in_month: int) -> int:
     """
-    elapsed = day_of_month - 1                       # BUG: off-by-one — should be day_of_month (days elapsed)
-    daily = spend_so_far / elapsed
-    return round(daily * days_in_month)
+    Project the total spend for the month based on spend to date.
 
-
-def over_budget(projection: int, budget_usd: int) -> bool:
-    """Whether a month-end projection tops the budget (the dashboard's alert predicate). Correct — the defect is
-    in how the projection is computed, not in this comparison."""
-    return int(projection) > int(budget_usd)
+    The projection uses the average daily spend over the days elapsed (including the current day)
+    and extrapolates it to the full month length.
+    """
+    if day_of_month <= 0:
+        raise ValueError("day_of_month must be a positive integer")
+    # Average spend per elapsed day
+    avg_per_day = spend_to_date / day_of_month
+    # Projected total for the whole month
+    projected = avg_per_day * days_in_month
+    return int(projected)

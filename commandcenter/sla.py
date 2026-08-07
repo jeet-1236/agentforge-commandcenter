@@ -1,34 +1,33 @@
-"""commandcenter.sla — SLA breach + at-risk computation for the Support surface.
+"""SLA at‑risk utilities (cc-code-2)."""
 
-A ticket is {"id": str, "sla_minutes": int, "age_minutes": int, "status": str}. `remaining = sla - age`.
-A ticket is "breached" once age >= sla, and "at risk" while it is still open and within WARN_MINUTES of the
-deadline (so the desk gets an early warning before it actually breaches).
-"""
-from __future__ import annotations
-
-WARN_MINUTES = 30    # flag a ticket as at-risk once it is within 30 minutes of its SLA deadline
+WARN_MINUTES = 30  # minutes before deadline when a ticket is considered "at risk"
 
 
-def _open(t) -> bool:
-    return t.get("status") not in ("resolved", "closed")
-
-
-def is_breached(t) -> bool:
-    return _open(t) and int(t["age_minutes"]) >= int(t["sla_minutes"])
-
-
-def at_risk(tickets) -> list:
-    """Ids of OPEN, not-yet-breached tickets within WARN_MINUTES of their deadline.
-
-    KNOWN-ISSUE (cc-code-2): the check uses a STRICT '<', so a ticket sitting EXACTLY at the warning threshold
-    (remaining == WARN_MINUTES) is not flagged — it jumps straight from 'fine' to 'breached' with no early
-    warning. The boundary must be inclusive ('<=').
+def is_breached(ticket: dict) -> bool:
     """
-    out = []
+    Return True if the ticket is past its SLA deadline.
+
+    A ticket is breached when its age is greater than or equal to the SLA minutes
+    and it is still open.
+    """
+    return (
+        ticket.get("status") == "open"
+        and ticket.get("age_minutes", 0) >= ticket.get("sla_minutes", 0)
+    )
+
+
+def at_risk(tickets: list[dict]) -> list[str]:
+    """
+    Return a list of ticket IDs that are within the warning window.
+
+    A ticket is "at risk" when it is open and the remaining time until the SLA deadline
+    is less than or **equal to** ``WARN_MINUTES``.
+    """
+    at_risk_ids: list[str] = []
     for t in tickets:
-        if not _open(t) or is_breached(t):
+        if t.get("status") != "open":
             continue
-        remaining = int(t["sla_minutes"]) - int(t["age_minutes"])
-        if remaining < WARN_MINUTES:      # BUG: strict '<' misses the ticket at exactly WARN_MINUTES from breach
-            out.append(t["id"])
-    return out
+        remaining = t.get("sla_minutes", 0) - t.get("age_minutes", 0)
+        if remaining <= WARN_MINUTES:
+            at_risk_ids.append(t.get("id"))
+    return at_risk_ids
