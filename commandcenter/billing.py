@@ -12,7 +12,7 @@ def line_total(price_cents: int, qty: int) -> int:
 
 def invoice_total(lines) -> int:
     """Total for an invoice, in cents. `lines` is an iterable of (price_cents, qty)."""
-    total = 0.0
+    total = 0
     for price_cents, qty in lines:
-        total += (price_cents / 100.0) * qty
-    return int(total * 100)
+        total += price_cents * qty
+    return total
