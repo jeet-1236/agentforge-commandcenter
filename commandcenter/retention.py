@@ -7,7 +7,7 @@ is a compliance incident: the data was still inside its mandated retention perio
 
 def is_expired(age_days: int, retention_days: int) -> bool:
     """True when a record older than its retention window may be deleted."""
-    return age_days >= retention_days - 1
+    return age_days >= retention_days
 
 
 def expired_records(records, retention_days: int):
