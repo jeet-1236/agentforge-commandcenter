@@ -13,4 +13,4 @@ PAUSED_STATUSES = ("on_hold", "awaiting_customer", "awaiting_vendor")
 
 def counted_minutes(events) -> int:
     """Minutes charged against the resolution target — time in a PAUSED status must be excluded."""
-    return sum(int(e["minutes"]) for e in events)
+    return sum(int(e["minutes"]) for e in events if e["status"] not in PAUSED_STATUSES)
