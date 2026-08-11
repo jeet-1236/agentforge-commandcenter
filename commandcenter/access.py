@@ -18,7 +18,7 @@ def needs_review(user) -> bool:
     """
     departed = bool(user.get("departed"))
     dormant = int(user.get("days_since_active", 0)) > STALE_DAYS
-    return departed and dormant                    # BUG: 'and' hides a recently-active leaver — should be 'or'
+    return departed or dormant
 
 
 def review_list(users) -> list:

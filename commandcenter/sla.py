@@ -29,6 +29,6 @@ def at_risk(tickets) -> list:
         if not _open(t) or is_breached(t):
             continue
         remaining = int(t["sla_minutes"]) - int(t["age_minutes"])
-        if remaining < WARN_MINUTES:      # BUG: strict '<' misses the ticket at exactly WARN_MINUTES from breach
+        if remaining <= WARN_MINUTES:
             out.append(t["id"])
     return out

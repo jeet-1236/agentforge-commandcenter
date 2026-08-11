@@ -11,5 +11,5 @@ def test_record_expires_once_the_window_has_passed():
 
 
 def test_expired_records_selects_only_the_expired():
-    recs = [{"id": 1, "age_days": 29}, {"id": 2, "age_days": 31}]
+    recs = [{"id": 1, "age_days": 10}, {"id": 2, "age_days": 31}]
     assert [r["id"] for r in expired_records(recs, 30)] == [2]

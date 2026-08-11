@@ -15,7 +15,7 @@ def project_month_end(spend_so_far: int, day_of_month: int, days_in_month: int =
     treats one day's spend as two days'), firing a false "over budget" alert every month-start; on the 1st it
     divides by zero.
     """
-    elapsed = day_of_month - 1                       # BUG: off-by-one — should be day_of_month (days elapsed)
+    elapsed = day_of_month
     daily = spend_so_far / elapsed
     return round(daily * days_in_month)
 
