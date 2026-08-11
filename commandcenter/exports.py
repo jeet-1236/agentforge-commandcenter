@@ -9,7 +9,7 @@ NAME_LIMIT = 10
 
 def truncate_name(name: str, limit: int = NAME_LIMIT) -> str:
     """Shorten `name` to at most `limit` CHARACTERS for the export column."""
-    return name.encode("utf-8")[:limit].decode("utf-8", "ignore")
+    return name[:limit]
 
 
 def export_row(account: dict) -> str:
