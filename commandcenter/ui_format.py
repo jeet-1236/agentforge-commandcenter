@@ -8,10 +8,11 @@ from __future__ import annotations
 
 
 def money_short(amount_usd: int) -> str:
-    """Compact money for a KPI tile: 1_840_000 -> '$1.84M', 48_200 -> '$48.2k', 950 -> '$950'.
+    """Money for a KPI tile.
 
-    The tile is ~90px wide, so a raw seven-digit number overflows its box and the reader sees a clipped,
-    meaningless string where the pipeline value should be.
+    The rule the tiles use: a million or more is abbreviated to two decimals ("$1.84M"); anything smaller
+    keeps its thousands separators ("$48,200"). The tile is ~90px wide, so a raw seven-digit number
+    overflows its box and the reader sees a clipped, meaningless string.
     """
     return "$" + str(int(amount_usd))
 

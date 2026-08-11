@@ -2,9 +2,9 @@ from commandcenter.ui_format import money_short, uptime_label
 
 
 def test_kpi_money_is_compact_enough_to_fit_its_tile():
-    # the KPI tile is ~90px wide: a raw seven-digit number overflows and renders unreadable
+    # a million or more is abbreviated to two decimals; below that, thousands separators
     assert money_short(1_840_000) == "$1.84M"
-    assert money_short(48_200) == "$48.2k"
+    assert money_short(48_200) == "$48,200"
     assert money_short(950) == "$950"
 
 
