@@ -27,7 +27,8 @@ def _name_ok(name: str) -> bool:
     """
     if not 2 <= len(name) <= 60:
         return False
-    return all(("a" <= c.lower() <= "z") or c == " " for c in name)
+    # Accept Unicode letters, space, hyphen, and apostrophe.
+    return all(c.isalpha() or c in " -'" for c in name)
 
 
 def _phone_ok(phone: str) -> bool:
@@ -35,8 +36,13 @@ def _phone_ok(phone: str) -> bool:
 
     7–15 is the E.164 range: a national number is never shorter, and no country's number is longer.
     """
-    parts = phone.split("-")
-    return [len(p) for p in parts] == [3, 3, 4] and all(p.isdigit() for p in parts)
+    # Remove all defined separator characters.
+    cleaned = ''.join(ch for ch in phone if ch not in PHONE_SEPARATORS)
+    # Strip an optional leading plus sign.
+    if cleaned.startswith('+'):
+        cleaned = cleaned[1:]
+    # Must be all digits and within the allowed length range.
+    return cleaned.isdigit() and 7 <= len(cleaned) <= 15
 
 
 def validate_contact(contact: dict) -> list:
