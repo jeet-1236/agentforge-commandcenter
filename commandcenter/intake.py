@@ -27,6 +27,9 @@ def handle_note(payload: dict) -> tuple:
     """
     ticket = payload.get("ticket_id")
     notes = payload.get("notes", "")
+    # Treat a JSON null (None) as an empty note string
+    if notes is None:
+        notes = ""
     text = notes.strip()
     if not ticket:
         return 400, {"error": "ticket_id is required"}
