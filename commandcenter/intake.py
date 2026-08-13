@@ -26,7 +26,8 @@ def handle_note(payload: dict) -> tuple:
     This handler must never raise: whatever a client sends, it answers with one of those two.
     """
     ticket = payload.get("ticket_id")
-    notes = payload.get("notes", "")
+    # Convert a JSON `null` (None) to an empty string, mirroring the behavior when the key is omitted.
+    notes = payload.get("notes") or ""
     text = notes.strip()
     if not ticket:
         return 400, {"error": "ticket_id is required"}
