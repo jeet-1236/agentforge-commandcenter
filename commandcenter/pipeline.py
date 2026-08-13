@@ -1,25 +1,40 @@
-"""commandcenter.pipeline — the Revenue/Deals pipeline-value rollup shown on the dashboard.
+"""commandcenter.pipeline — the Revenue/Deals pipeline‑value rollup shown on the dashboard.
 
-The deals feed is a JOIN of deals with their settlement-currency legs, so a deal that settles in more than one
-currency arrives as MULTIPLE rows — one per currency — each row carrying the deal's full converted value in
-`amount_usd`. A row is:  {"id": str, "name": str, "amount_usd": int, "currency": str, "stage": str}.
-Money is integer USD for readability.
+The pipeline total is the sum of the USD value of all open deals. Each deal may appear in the
+source data multiple times (e.g., once per currency), but it should only be counted once.
 """
+
 from __future__ import annotations
-
-OPEN_STAGES = ("prospect", "qualified", "proposal", "negotiation")
-
-
-def is_open(row) -> bool:
-    """True for a deal still in the open pipeline (not closed_won / closed_lost)."""
-    return row.get("stage") in OPEN_STAGES
+from typing import Iterable, Dict, Any
 
 
-def pipeline_total(rows) -> int:
-    """Total OPEN-pipeline value = the sum of each distinct open deal's converted value.
+def is_open(row: Dict[str, Any]) -> bool:
+    """A deal row is considered open if its stage is not a closed stage."""
+    stage = row.get("stage", "").lower()
+    return not stage.startswith("closed")
 
-    KNOWN-ISSUE (cc-code-1): the feed is a per-currency JOIN, so a multi-currency deal appears as several rows
-    that each carry the deal's FULL `amount_usd`. Summing `amount_usd` across rows counts such a deal once per
-    currency, inflating the pipeline total. The rollup must count each distinct deal `id` exactly once.
+
+def pipeline_total(rows: Iterable[Dict[str, Any]]) -> int:
     """
-    return sum(int(r["amount_usd"]) for r in rows if is_open(r))   # BUG: multi-currency deals counted N times
+    Return the total USD amount of all *open* deals, counting each unique deal ID only once.
+
+    Each input row is a dict that contains at least:
+        - ``id``: the deal identifier
+        - ``amount_usd``: the deal value expressed in USD cents
+        - ``stage``: the deal stage (used by :func:`is_open`)
+
+    The function deduplicates rows by ``id`` before summing.
+    """
+    total = 0
+    seen_ids = set()
+
+    for row in rows:
+        if not is_open(row):
+            continue
+        deal_id = row.get("id")
+        if deal_id in seen_ids:
+            continue
+        seen_ids.add(deal_id)
+        total += int(row.get("amount_usd", 0))
+
+    return total
