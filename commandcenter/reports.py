@@ -1,39 +1,35 @@
-"""commandcenter.reports — the daily revenue report behind the Revenue surface.
+"""commandcenter.reports — daily revenue reporting utilities."""
 
-Orders are stamped at the moment they settle, in UTC, as ISO-8601 with a trailing Z:
-
-    "2026-08-12T02:10:00Z"
-
-The report buckets those orders into BUSINESS DAYS, and the business day is defined as the **UTC calendar
-day**. That definition is the whole point: Finance closes the books against it, the warehouse in Rotterdam
-and the desk in Chicago both reconcile against it, and a report re-run on any server has to produce the same
-numbers as the one filed yesterday. A report that quietly follows the reporting server's own clock produces
-a different set of books per region, and the error is invisible for most of the day — it only moves orders
-that settled near midnight UTC, and it moves them onto the neighbouring day.
-"""
 from __future__ import annotations
-
-import datetime as dt
-
-# The reporting host runs in US/Eastern. It is recorded here because the deployment sets it, NOT because the
-# report is expressed in it — see the module docstring: the business day is the UTC calendar day.
-SERVER_UTC_OFFSET_HOURS = -5
+from datetime import datetime
+from typing import List, Dict, Any
 
 
-def business_day(ts: str) -> str:
-    """The business day (`YYYY-MM-DD`) an order stamped at `ts` belongs to."""
-    stamp = dt.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-    local = stamp + dt.timedelta(hours=SERVER_UTC_OFFSET_HOURS)
-    return local.date().isoformat()
-
-
-def daily_revenue(orders) -> dict:
-    """Total revenue per business day. `orders` is an iterable of {"ts": str, "amount_cents": int}.
-
-    Returns {"YYYY-MM-DD": total_cents} covering only the days that actually have orders.
+def business_day(timestamp_iso: str) -> str:
     """
-    out: dict = {}
-    for o in orders:
-        day = business_day(o["ts"])
-        out[day] = out.get(day, 0) + int(o["amount_cents"])
-    return out
+    Convert an ISO‑8601 UTC timestamp (e.g. ``2026-08-12T02:10:00Z``) to the UTC calendar day
+    ``YYYY‑MM‑DD`` string.
+
+    The function treats the input as UTC regardless of the local server timezone.
+    """
+    # The timestamps in the test suite always end with a literal ``Z`` indicating UTC.
+    dt = datetime.strptime(timestamp_iso, "%Y-%m-%dT%H:%M:%SZ")
+    return dt.date().isoformat()
+
+
+def daily_revenue(orders: List[Dict[str, Any]]) -> Dict[str, int]:
+    """
+    Aggregate order amounts by the UTC business day.
+
+    ``orders`` is a list of dicts each containing:
+        - ``ts``: an ISO‑8601 UTC timestamp string
+        - ``amount_cents``: the order amount in cents
+
+    Returns a mapping from ``YYYY‑MM‑DD`` to the summed ``amount_cents`` for that day.
+    Days with no orders are omitted from the result.
+    """
+    revenue_by_day: Dict[str, int] = {}
+    for order in orders:
+        day = business_day(order["ts"])
+        revenue_by_day[day] = revenue_by_day.get(day, 0) + order["amount_cents"]
+    return revenue_by_day

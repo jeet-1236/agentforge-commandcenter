@@ -8,10 +8,10 @@ An order total is built in a fixed order, and the order matters because each ste
 
     1. the promotional discount comes off the subtotal
     2. tax is charged on what the customer actually pays for the goods — the DISCOUNTED amount
-    3. shipping is added last, after tax (it is quoted tax-inclusive by the carrier)
+    3. shipping is added last, after tax (it is quoted tax‑inclusive by the carrier)
 
 Step 2 is where international orders differ from domestic ones: a domestic order carries 0% tax at this
-layer (it is added downstream by the state-tax service), so any error in the tax base is invisible at home
+layer (it is added downstream by the state‑tax service), so any error in the tax base is invisible at home
 and shows up only on orders that carry a VAT/GST rate.
 """
 from __future__ import annotations
@@ -22,10 +22,15 @@ def discounted_subtotal(subtotal_cents: int, discount_pct: float) -> int:
     return round(subtotal_cents * (1 - discount_pct / 100.0))
 
 
-def order_total(subtotal_cents: int, discount_pct: float = 0.0, tax_pct: float = 0.0,
-                shipping_cents: int = 0) -> int:
+def order_total(
+    subtotal_cents: int,
+    discount_pct: float = 0.0,
+    tax_pct: float = 0.0,
+    shipping_cents: int = 0,
+) -> int:
     """The amount to charge, in cents: discounted subtotal + tax on that discounted amount + shipping."""
     discounted = discounted_subtotal(subtotal_cents, discount_pct)
-    taxable = discounted_subtotal(discounted, discount_pct)
+    # Tax is calculated on the already‑discounted subtotal, NOT on a double‑discounted amount.
+    taxable = discounted
     tax = round(taxable * tax_pct / 100.0)
     return discounted + tax + shipping_cents
