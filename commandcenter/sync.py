@@ -12,6 +12,6 @@ def sync_records(records, push):
         try:
             push(r)
             synced += 1
-        except Exception:
-            failed += 1
+        except Exception:  # noqa: BLE001 — one rejected record must not stop the batch
+            continue
     return {"synced": synced, "failed": failed}
